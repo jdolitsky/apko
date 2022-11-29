@@ -33,6 +33,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/google"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -51,6 +52,12 @@ import (
 
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/options"
+)
+
+const (
+	LocalDomain    = "apko.local"
+	LocalRepoImage = "image"
+	LocalRepoIndex = "index"
 )
 
 var keychain = authn.NewMultiKeychain(
@@ -312,10 +319,26 @@ func buildImageTarballFromLayerWithMediaType(mediaType ggcrtypes.MediaType, imag
 	return nil
 }
 
-func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash, logger *logrus.Entry) (name.Digest, error) {
+func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash, local bool, logger *logrus.Entry) (name.Digest, error) {
 	imgRef, err := name.ParseReference(imageRef)
 	if err != nil {
 		return name.Digest{}, fmt.Errorf("unable to parse reference: %w", err)
+	}
+
+	if local {
+		localTag := fmt.Sprintf("%s/%s:%s", LocalDomain, LocalRepoImage, hash.Hex)
+		daemonWriteTag, err := name.NewTag(localTag)
+		if err != nil {
+			return name.Digest{}, err
+		}
+		logger.Infof("saving OCI image locally: %s", daemonWriteTag.Name())
+		resp, err := daemon.Write(daemonWriteTag, image)
+		if err != nil {
+			logger.Errorf("docker daemon error: %s", strings.Replace(resp, "\n", "\\n", -1))
+			return name.Digest{}, fmt.Errorf("failed to save OCI image locally: %w", err)
+		}
+		logger.Debugf("docker daemon response: %s", strings.Replace(resp, "\n", "\\n", -1))
+		return imgRef.Context().Digest(hash.String()), nil
 	}
 
 	// Write any attached SBOMs/signatures.
@@ -352,20 +375,13 @@ func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarG
 	}
 
 	digest := name.Digest{}
-
-	if local {
-		logger.Infof("--local detected (publishImageFromLayerWithMediaType). Exiting.")
-		panic("TODO: save to local docker daemon and return digest (publishImageFromLayerWithMediaType)")
-	} else {
-		for _, tag := range tags {
-			logger.Printf("publishing image tag %v", tag)
-			digest, err = publishTagFromImage(v1Image, tag, h, logger)
-			if err != nil {
-				return name.Digest{}, nil, err
-			}
+	for _, tag := range tags {
+		logger.Printf("publishing image tag %v", tag)
+		digest, err = publishTagFromImage(v1Image, tag, h, local, logger)
+		if err != nil {
+			return name.Digest{}, nil, err
 		}
 	}
-
 	return digest, v1Image, nil
 }
 
@@ -424,13 +440,29 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, _ types.ImageConfi
 		return name.Digest{}, nil, err
 	}
 
-	digest := name.Digest{}
-
+	localTag, err := name.NewTag(fmt.Sprintf("%s/%s:%s", LocalDomain, LocalRepoIndex, h.Hex))
+	if err != nil {
+		return name.Digest{}, nil, err
+	}
 	if local {
-		logger.Infof("--local detected (publishIndexWithMediaType). Exiting.")
-		panic("TODO: save to local docker daemon and return digest (publishIndexWithMediaType)")
-	} else {
-		for _, tag := range tags {
+		logger.Infof("saving OCI index locally: %s", localTag.Name())
+		img, err := idx.Image(h)
+		if err != nil {
+			return name.Digest{}, nil, err
+		}
+		resp, err := daemon.Write(localTag, img)
+		if err != nil {
+			logger.Errorf("docker daemon error: %s", strings.Replace(resp, "\n", "\\n", -1))
+			return name.Digest{}, nil, fmt.Errorf("failed to save OCI index locally: %w", err)
+		}
+		logger.Debugf("docker daemon response: %s", strings.Replace(resp, "\n", "\\n", -1))
+	}
+
+	digest := name.Digest{}
+	for _, tag := range tags {
+		if local {
+			logger.Printf("doing nothing with %v", tag)
+		} else {
 			logger.Printf("publishing index tag %v", tag)
 			digest, err = publishTagFromIndex(idx, tag, h, logger)
 			if err != nil {

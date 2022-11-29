@@ -310,9 +310,6 @@ func publishImage(bc *build.Context, layerTarGZ string, arch types.Architecture)
 func publishIndex(bc *build.Context, imgs map[types.Architecture]coci.SignedImage) (
 	indexDigest name.Digest, idx coci.SignedImageIndex, err error,
 ) {
-	if bc.Options.Local {
-		bc.Logger().Infof("--local detected")
-	}
 	if bc.Options.UseDockerMediaTypes {
 		indexDigest, idx, err = oci.PublishDockerIndex(bc.ImageConfiguration, imgs, logrus.NewEntry(bc.Options.Log), bc.Options.Local, bc.Options.Tags...)
 		if err != nil {
