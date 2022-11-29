@@ -332,15 +332,15 @@ func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash, l
 	return imgRef.Context().Digest(hash.String()), nil
 }
 
-func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
-	return publishImageFromLayerWithMediaType(ggcrtypes.OCILayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, tags...)
+func PublishImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, local bool, tags ...string) (name.Digest, oci.SignedImage, error) {
+	return publishImageFromLayerWithMediaType(ggcrtypes.OCILayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, local, tags...)
 }
 
-func PublishDockerImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
-	return publishImageFromLayerWithMediaType(ggcrtypes.DockerLayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, tags...)
+func PublishDockerImageFromLayer(layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, local bool, tags ...string) (name.Digest, oci.SignedImage, error) {
+	return publishImageFromLayerWithMediaType(ggcrtypes.DockerLayer, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats, local, tags...)
 }
 
-func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, tags ...string) (name.Digest, oci.SignedImage, error) {
+func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarGZ string, ic types.ImageConfiguration, created time.Time, arch types.Architecture, logger *logrus.Entry, sbomPath string, sbomFormats []string, local bool, tags ...string) (name.Digest, oci.SignedImage, error) {
 	v1Image, err := buildImageFromLayerWithMediaType(mediaType, layerTarGZ, ic, created, arch, logger, sbomPath, sbomFormats)
 	if err != nil {
 		return name.Digest{}, nil, err
@@ -352,26 +352,32 @@ func publishImageFromLayerWithMediaType(mediaType ggcrtypes.MediaType, layerTarG
 	}
 
 	digest := name.Digest{}
-	for _, tag := range tags {
-		logger.Printf("publishing image tag %v", tag)
-		digest, err = publishTagFromImage(v1Image, tag, h, logger)
-		if err != nil {
-			return name.Digest{}, nil, err
+
+	if local {
+		logger.Infof("--local detected (publishImageFromLayerWithMediaType). Exiting.")
+		panic("TODO: save to local docker daemon and return digest (publishImageFromLayerWithMediaType)")
+	} else {
+		for _, tag := range tags {
+			logger.Printf("publishing image tag %v", tag)
+			digest, err = publishTagFromImage(v1Image, tag, h, logger)
+			if err != nil {
+				return name.Digest{}, nil, err
+			}
 		}
 	}
 
 	return digest, v1Image, nil
 }
 
-func PublishIndex(ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
-	return publishIndexWithMediaType(ggcrtypes.OCIImageIndex, ic, imgs, logger, tags...)
+func PublishIndex(ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, local bool, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
+	return publishIndexWithMediaType(ggcrtypes.OCIImageIndex, ic, imgs, logger, local, tags...)
 }
 
-func PublishDockerIndex(ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
-	return publishIndexWithMediaType(ggcrtypes.DockerManifestList, ic, imgs, logger, tags...)
+func PublishDockerIndex(ic types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, local bool, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
+	return publishIndexWithMediaType(ggcrtypes.DockerManifestList, ic, imgs, logger, local, tags...)
 }
 
-func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, _ types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
+func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, _ types.ImageConfiguration, imgs map[types.Architecture]oci.SignedImage, logger *logrus.Entry, local bool, tags ...string) (name.Digest, oci.SignedImageIndex, error) {
 	idx := signed.ImageIndex(mutate.IndexMediaType(empty.Index, mediaType))
 	archs := make([]types.Architecture, 0, len(imgs))
 	for arch := range imgs {
@@ -419,11 +425,17 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, _ types.ImageConfi
 	}
 
 	digest := name.Digest{}
-	for _, tag := range tags {
-		logger.Printf("publishing index tag %v", tag)
-		digest, err = publishTagFromIndex(idx, tag, h, logger)
-		if err != nil {
-			return name.Digest{}, nil, err
+
+	if local {
+		logger.Infof("--local detected (publishIndexWithMediaType). Exiting.")
+		panic("TODO: save to local docker daemon and return digest (publishIndexWithMediaType)")
+	} else {
+		for _, tag := range tags {
+			logger.Printf("publishing index tag %v", tag)
+			digest, err = publishTagFromIndex(idx, tag, h, logger)
+			if err != nil {
+				return name.Digest{}, nil, err
+			}
 		}
 	}
 
