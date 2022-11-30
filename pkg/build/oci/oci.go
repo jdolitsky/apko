@@ -488,7 +488,6 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, _ types.ImageConfi
 		return name.Digest{}, nil, err
 	}
 	digest := name.Digest{}
-
 	for _, tag := range tags {
 		logger.Printf("publishing index tag %v", tag)
 		digest, err = publishTagFromIndex(idx, tag, h, logger)
