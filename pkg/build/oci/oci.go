@@ -55,9 +55,8 @@ import (
 )
 
 const (
-	LocalDomain    = "apko.local"
-	LocalRepoImage = "image"
-	LocalRepoIndex = "index"
+	LocalDomain = "apko.local"
+	LocalRepo   = "cache"
 )
 
 var keychain = authn.NewMultiKeychain(
@@ -326,7 +325,7 @@ func publishTagFromImage(image oci.SignedImage, imageRef string, hash v1.Hash, l
 	}
 
 	if local {
-		localTag := fmt.Sprintf("%s/%s:%s", LocalDomain, LocalRepoImage, hash.Hex)
+		localTag := fmt.Sprintf("%s/%s:%s", LocalDomain, LocalRepo, hash.Hex)
 		daemonWriteTag, err := name.NewTag(localTag)
 		if err != nil {
 			return name.Digest{}, err
@@ -435,42 +434,67 @@ func publishIndexWithMediaType(mediaType ggcrtypes.MediaType, _ types.ImageConfi
 	// oci.SignedImageIndex, so we may need to reimplement
 	// mutate.Annotations in ocimutate to keep it for now.
 
+	// If attempting to save locally, pick the native architecture
+	// and use that cached image for local tags
+	if local {
+		im, err := idx.IndexManifest()
+		if err != nil {
+			return name.Digest{}, nil, err
+		}
+		goos, goarch := os.Getenv("GOOS"), os.Getenv("GOARCH")
+		if goos == "" {
+			goos = "linux"
+		}
+		if goarch == "" {
+			goarch = "amd64"
+		}
+		for _, manifest := range im.Manifests {
+			if manifest.Platform == nil {
+				continue
+			}
+			if manifest.Platform.OS != goos {
+				continue
+			}
+			if manifest.Platform.Architecture != goarch {
+				continue
+			}
+			localSrcTagStr := fmt.Sprintf("%s/%s:%s", LocalDomain, LocalRepo, manifest.Digest.Hex)
+			logger.Printf("using native single-arch image for local tags: %s (%s/%s)", localSrcTagStr, goos, goarch)
+			var err error
+			localSrcTag, err := name.NewTag(localSrcTagStr)
+			if err != nil {
+				return name.Digest{}, nil, err
+			}
+			for _, tag := range tags {
+				localDstTag, err := name.NewTag(tag)
+				if err != nil {
+					return name.Digest{}, nil, err
+				}
+				logger.Printf("tagging local image %s as %s", localSrcTag.Name(), localDstTag.Name())
+				if err := daemon.Tag(localSrcTag, localDstTag); err != nil {
+					return name.Digest{}, nil, err
+				}
+			}
+			digest, err := name.NewDigest(fmt.Sprintf("%s@%s", localSrcTag.Name(), manifest.Digest.String()))
+			if err != nil {
+				return name.Digest{}, nil, err
+			}
+			return digest, idx, nil
+		}
+	}
+
 	h, err := idx.Digest()
 	if err != nil {
 		return name.Digest{}, nil, err
 	}
-
-	localTag, err := name.NewTag(fmt.Sprintf("%s/%s:%s", LocalDomain, LocalRepoIndex, h.Hex))
-	if err != nil {
-		return name.Digest{}, nil, err
-	}
-	if local {
-		logger.Infof("saving OCI index locally: %s", localTag.Name())
-		img, err := idx.Image(h)
+	var digest name.Digest
+	for _, tag := range tags {
+		logger.Printf("publishing index tag %v", tag)
+		digest, err = publishTagFromIndex(idx, tag, h, logger)
 		if err != nil {
 			return name.Digest{}, nil, err
 		}
-		resp, err := daemon.Write(localTag, img)
-		if err != nil {
-			logger.Errorf("docker daemon error: %s", strings.Replace(resp, "\n", "\\n", -1))
-			return name.Digest{}, nil, fmt.Errorf("failed to save OCI index locally: %w", err)
-		}
-		logger.Debugf("docker daemon response: %s", strings.Replace(resp, "\n", "\\n", -1))
 	}
-
-	digest := name.Digest{}
-	for _, tag := range tags {
-		if local {
-			logger.Printf("doing nothing with %v", tag)
-		} else {
-			logger.Printf("publishing index tag %v", tag)
-			digest, err = publishTagFromIndex(idx, tag, h, logger)
-			if err != nil {
-				return name.Digest{}, nil, err
-			}
-		}
-	}
-
 	return digest, idx, nil
 }
 

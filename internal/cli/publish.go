@@ -225,9 +225,14 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 		builtReferences = append(builtReferences, finalDigest.String())
 	}
 
-	for _, at := range additionalTags {
-		if err := oci.Copy(finalDigest.Name(), at); err != nil {
-			return err
+	finalDigestStr := finalDigest.String()
+	if bc.Options.Local {
+		finalDigestStr = strings.Split(finalDigestStr, "@")[0]
+	} else {
+		for _, at := range additionalTags {
+			if err := oci.Copy(finalDigest.Name(), at); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -249,10 +254,12 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 				return fmt.Errorf("generating sbom for %s: %w", arch, err)
 			}
 
-			if _, err := oci.PostAttachSBOM(
-				img, sbompath, bc.Options.SBOMFormats, arch, bc.Logger(), bc.Options.Tags...,
-			); err != nil {
-				return fmt.Errorf("attaching sboms to %s image: %w", arch, err)
+			if !bc.Options.Local {
+				if _, err := oci.PostAttachSBOM(
+					img, sbompath, bc.Options.SBOMFormats, arch, bc.Logger(), bc.Options.Tags...,
+				); err != nil {
+					return fmt.Errorf("attaching sboms to %s image: %w", arch, err)
+				}
 			}
 		}
 
@@ -261,10 +268,12 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 				return fmt.Errorf("generating index SBOM: %w", err)
 			}
 
-			if _, err := oci.PostAttachSBOM(
-				idx, sbompath, bc.Options.SBOMFormats, types.Architecture{}, bc.Logger(), bc.Options.Tags...,
-			); err != nil {
-				return fmt.Errorf("attaching sboms to index: %w", err)
+			if !bc.Options.Local {
+				if _, err := oci.PostAttachSBOM(
+					idx, sbompath, bc.Options.SBOMFormats, types.Architecture{}, bc.Logger(), bc.Options.Tags...,
+				); err != nil {
+					return fmt.Errorf("attaching sboms to index: %w", err)
+				}
 			}
 		}
 	}
@@ -279,7 +288,7 @@ func PublishCmd(ctx context.Context, outputRefs string, archs []types.Architectu
 
 	// Write the image digest to STDOUT in order to enable command
 	// composition e.g. kn service create --image=$(apko publish ...)
-	fmt.Println(finalDigest)
+	fmt.Println(finalDigestStr)
 
 	return nil
 }
