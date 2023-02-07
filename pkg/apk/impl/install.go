@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 // writeOneFile writes one file from the APK given the tar header and tar reader.
@@ -59,17 +60,8 @@ func (a *APKImplementation) installAPKFiles(gzipIn io.Reader) ([]tar.Header, err
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			// special case, if the target already exists, and it is a symlink to a directory, we can accept it as is
-			// otherwise, we need to create the directory.
-			if fi, err := a.fs.Stat(header.Name); err == nil && fi.Mode()&os.ModeSymlink != 0 {
-				if target, symlink, err := a.fs.Readlink(header.Name); err == nil && symlink {
-					if fi, err = a.fs.Stat(target); err == nil && fi.IsDir() {
-						continue
-					}
-				}
-			}
-			if err := a.fs.MkdirAll(header.Name, header.FileInfo().Mode().Perm()); err != nil {
-				return nil, fmt.Errorf("error creating directory %s: %w", header.Name, err)
+			if err := a.installAPKFilesHandleDir(header); err != nil {
+				return nil, err
 			}
 		case tar.TypeReg:
 			if err := a.writeOneFile(header, tr); err != nil {
@@ -79,7 +71,16 @@ func (a *APKImplementation) installAPKFiles(gzipIn io.Reader) ([]tar.Header, err
 			// some underlying filesystems and some memfs that we use in tests do not support symlinks.
 			// attempt it, and if it fails, just copy it.
 			if err := a.fs.Symlink(header.Linkname, header.Name); err != nil {
-				return nil, err
+				if strings.Contains(err.Error(), "Is directory") {
+					if err := a.installAPKFilesHandleDir(header); err != nil {
+						panic("AY GOVNA" + err.Error())
+						return nil, err
+					}
+				} /*else {
+					if err := a.writeOneFile(header, tr); err != nil {
+						return nil, err
+					}
+				}*/
 			}
 		case tar.TypeLink:
 			if err := a.fs.Link(header.Linkname, header.Name); err != nil {
@@ -92,4 +93,20 @@ func (a *APKImplementation) installAPKFiles(gzipIn io.Reader) ([]tar.Header, err
 	}
 
 	return files, nil
+}
+
+// special case, if the target already exists, and it is a symlink to a directory, we can accept it as is
+// otherwise, we need to create the directory.
+func (a *APKImplementation) installAPKFilesHandleDir(header *tar.Header) error {
+	if fi, err := a.fs.Stat(header.Name); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		if target, symlink, err := a.fs.Readlink(header.Name); err == nil && symlink {
+			if fi, err = a.fs.Stat(target); err == nil && fi.IsDir() {
+				return nil
+			}
+		}
+	}
+	if err := a.fs.MkdirAll(header.Name, header.FileInfo().Mode().Perm()); err != nil {
+		return fmt.Errorf("error creating directory %s: %w", header.Name, err)
+	}
+	return nil
 }

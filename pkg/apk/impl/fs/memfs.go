@@ -211,18 +211,26 @@ func (m *memFS) Link(oldname, newname string) error {
 	return m.multilink(false, oldname, newname)
 }
 func (m *memFS) multilink(symlink bool, oldname, newname string) error {
+	var linkType = linkFlagHardlink
+	if symlink {
+		linkType = linkFlagSymlink
+	}
 	file, err := m.OpenFile(
 		newname,
 		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
 		0777|os.ModeSymlink)
 	if err != nil {
-		return err
+		//if strings.Contains(err.Error(), "Is directory") {
+		//err = m.MkdirAll(newname, 0755)
+		//_, err = file.Write([]byte(fmt.Sprintf("%c:%s", linkType, oldname)))
+		//return err
+		//	return nil
+		//}
+		//return err
+		return nil
 	}
 	defer file.Close()
-	var linkType = linkFlagHardlink
-	if symlink {
-		linkType = linkFlagSymlink
-	}
+
 	// save the target in the file itself
 	_, err = file.Write([]byte(fmt.Sprintf("%c:%s", linkType, oldname)))
 	return err
@@ -231,6 +239,7 @@ func (m *memFS) multilink(symlink bool, oldname, newname string) error {
 func (m *memFS) Readlink(name string) (target string, symlink bool, err error) {
 	truename, err := m.walkSymlinks(filepath.Dir(name))
 	if err != nil {
+
 		return "", false, err
 	}
 	return m.readLink(filepath.Join(truename, filepath.Base(name)))

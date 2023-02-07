@@ -214,17 +214,24 @@ func (a *APKImplementation) InitDB(versions ...string) error {
 		}
 	}
 	for _, e := range initDirectories {
-		err := a.fs.Mkdir(e.path, e.perms)
+		err := a.fs.MkdirAll(e.path, e.perms)
 		switch {
 		case err != nil && !errors.Is(err, fs.ErrExist):
 			return fmt.Errorf("failed to create directory %s: %w", e.path, err)
 		case err != nil && errors.Is(err, fs.ErrExist):
-			stat, err := a.fs.Stat(e.path)
-			if err != nil {
-				return fmt.Errorf("failed to stat directory %s: %w", e.path, err)
-			}
-			if !stat.IsDir() {
-				return fmt.Errorf("failed to create directory %s: already exists as file", e.path)
+			for {
+				stat, err := a.fs.Stat(e.path)
+				if err != nil {
+					fmt.Printf("failed to stat directory %s: %v\n", e.path, err)
+					//return fmt.Errorf("failed to stat directory %s: %w", e.path, err)
+					continue
+				}
+				if !stat.IsDir() {
+					//eturn fmt.Errorf("failed to create directory %s: already exists as file", e.path)
+					fmt.Printf("failed to create directory %s: already exists as file\n", e.path)
+					continue
+				}
+				break
 			}
 		}
 	}
