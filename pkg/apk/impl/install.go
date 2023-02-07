@@ -73,14 +73,9 @@ func (a *APKImplementation) installAPKFiles(gzipIn io.Reader) ([]tar.Header, err
 			if err := a.fs.Symlink(header.Linkname, header.Name); err != nil {
 				if strings.Contains(err.Error(), "Is directory") {
 					if err := a.installAPKFilesHandleDir(header); err != nil {
-						panic("AY GOVNA" + err.Error())
 						return nil, err
 					}
-				} /*else {
-					if err := a.writeOneFile(header, tr); err != nil {
-						return nil, err
-					}
-				}*/
+				}
 			}
 		case tar.TypeLink:
 			if err := a.fs.Link(header.Linkname, header.Name); err != nil {
