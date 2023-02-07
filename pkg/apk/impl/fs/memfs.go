@@ -231,7 +231,6 @@ func (m *memFS) multilink(symlink bool, oldname, newname string) error {
 func (m *memFS) Readlink(name string) (target string, symlink bool, err error) {
 	truename, err := m.walkSymlinks(filepath.Dir(name))
 	if err != nil {
-
 		return "", false, err
 	}
 	return m.readLink(filepath.Join(truename, filepath.Base(name)))

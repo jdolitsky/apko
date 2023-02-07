@@ -214,7 +214,7 @@ func (a *APKImplementation) InitDB(versions ...string) error {
 		}
 	}
 	for _, e := range initDirectories {
-		err := a.fs.MkdirAll(e.path, e.perms)
+		err := a.fs.Mkdir(e.path, e.perms)
 		switch {
 		case err != nil && !errors.Is(err, fs.ErrExist):
 			return fmt.Errorf("failed to create directory %s: %w", e.path, err)
