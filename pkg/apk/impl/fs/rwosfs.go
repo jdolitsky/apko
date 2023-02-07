@@ -419,6 +419,8 @@ func (f *dirFS) Link(oldname, newname string) error {
 }
 
 func (f *dirFS) Symlink(oldname, newname string) error {
+	f.caseMapMutex.Lock()
+	defer f.caseMapMutex.Unlock()
 	// For symlink, take target as is.
 	// If it is outside of the base, it will be resolved by Readlink.
 	// This enables proper symlink behaviour.

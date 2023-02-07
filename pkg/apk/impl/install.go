@@ -70,12 +70,17 @@ func (a *APKImplementation) installAPKFiles(gzipIn io.Reader) ([]tar.Header, err
 		case tar.TypeSymlink:
 			// some underlying filesystems and some memfs that we use in tests do not support symlinks.
 			// attempt it, and if it fails, just copy it.
-			if err := a.fs.Symlink(header.Linkname, header.Name); err != nil {
-				if strings.Contains(err.Error(), "Is directory") {
-					if err := a.installAPKFilesHandleDir(header); err != nil {
+			for {
+				if err := a.fs.Symlink(header.Linkname, header.Name); err != nil {
+					if strings.Contains(err.Error(), "Is directory") {
+						break
+					}
+					if err := a.writeOneFile(header, tr); err != nil {
 						return nil, err
 					}
+					continue
 				}
+				break
 			}
 		case tar.TypeLink:
 			if err := a.fs.Link(header.Linkname, header.Name); err != nil {
